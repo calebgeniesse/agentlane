@@ -7,40 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-12
+
+AgentLane `0.19.0` adds Model Context Protocol (MCP) tools over Streamable HTTP and stdio, with shared connections and tool catalog caching. Install `agentlane[mcp]` to use MCP servers with the harness.
+
 ### Added
 
-- Added application-scoped `MCPClientManager` reuse with bounded connection
-  pooling, idle cleanup, and authorization-aware catalog caching. Catalogs
-  refresh after expiry or tool-list changes and retain only each run's permitted
-  stale fallback.
-- Added `agentlane[mcp]` with Streamable HTTP and stdio servers, native tools,
-  and application-managed bearer authorization through `MCPToolsShim`.
-- Added `ToolSpec.strict` for schema handling and `Tool.retry_on_timeout` for
-  per-tool timeout retry control.
-- Added `PreparedTurn.add_tools(...)`, persistent tool exclusions, and
-  `ToolNameCollisionError` for shim tool contributions.
-- Added `ToolSourceBinding` and restricted dynamic tool inheritance for generic
-  agents, predefined agents, and handoffs. Child agents bind fresh source and
-  wrapper sessions while preserving visible-name restrictions.
+- Added `MCPToolsShim` with native tools, application-managed bearer authorization, bounded result rendering, and a runnable meeting assistant example ([`e91b059`](https://github.com/yasik/agentlane/commit/e91b059)).
+- Added `MCPClientManager` to share connections across runs, clean up idle connections, and cache catalogs by authorization context. Catalogs refresh after expiry or tool-list changes ([`afb18ba`](https://github.com/yasik/agentlane/commit/afb18ba)).
+- Added `ToolSpec.strict` for schema handling and `Tool.retry_on_timeout` for per-tool timeout retry control ([`de32212`](https://github.com/yasik/agentlane/commit/de32212)).
+- Added `PreparedTurn.add_tools(...)`, persistent tool exclusions, and `ToolNameCollisionError` for shim tool contributions ([`db474bc`](https://github.com/yasik/agentlane/commit/db474bc)).
+- Added `ToolSourceBinding` and restricted dynamic tool inheritance for generic agents, predefined agents, and handoffs. Child agents create fresh source and wrapper sessions while preserving visible-name restrictions ([`6944aaf`](https://github.com/yasik/agentlane/commit/6944aaf)).
 
 ### Fixed
 
-- Require MCP SDK 2.2 or later within major version 2 to prevent external schema
-  requests during tool-result validation.
-- Bound MCP result rendering before redaction and serialization. Omit oversized
-  values and retain `truncated` and `omittedBlocks` without a full-result
-  omitted-character count.
-- Preserve the MCP server's `isError` flag in model-facing results, including
-  truncated output.
-- Reject a tool request if its authorization changes between discovery and the
-  first HTTP send.
-- Clean up started shims after partial startup, continue later cleanup after a
-  callback fails, and preserve the primary startup or run error.
-- Apply tool exclusions and execution budgets after all shim contributions,
-  preserve tool settings through empty name filters, and remove required tool
-  choice when the final tool set is empty.
-- Omit tool arguments and results from function spans when tracing uses
-  `ModelTracing.ENABLED_WITHOUT_DATA`.
+- Clean up started shims after partial startup, continue cleanup after a callback fails, and preserve the primary startup or run error ([`db474bc`](https://github.com/yasik/agentlane/commit/db474bc)).
+- Apply tool exclusions and execution budgets after all shim contributions, preserve tool settings through empty name filters, and remove required tool choice when the final tool set is empty ([`db474bc`](https://github.com/yasik/agentlane/commit/db474bc)).
+- Omit tool arguments and results from function spans when tracing uses `ModelTracing.ENABLED_WITHOUT_DATA` ([`de32212`](https://github.com/yasik/agentlane/commit/de32212)).
+
+### Security
+
+- Require MCP SDK 2.2 or later within major version 2 to prevent external schema requests during tool-result validation. Reject a tool request if its authorization changes between discovery and the first HTTP send ([`e91b059`](https://github.com/yasik/agentlane/commit/e91b059)).
 
 ## [0.18.0] - 2026-10-06
 
@@ -396,7 +383,8 @@ AgentLane `0.3.0` is the initial public release. It ships the runtime and distri
 
 - Final pre-release cleanup removed dead code and added repo-level `vulture` configuration for ongoing dead-code checks ([`f009e5d`](https://github.com/yasik/agentlane/commit/f009e5d523a84d3e6747329522582d3196906534))
 
-[Unreleased]: https://github.com/yasik/agentlane/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/yasik/agentlane/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/yasik/agentlane/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/yasik/agentlane/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/yasik/agentlane/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/yasik/agentlane/compare/v0.15.0...v0.16.0
