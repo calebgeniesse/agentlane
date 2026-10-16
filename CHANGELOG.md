@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-16
+
+AgentLane `0.20.0` adds SPACE sandbox tools. Applications can run Bash and file tools in a sandbox while keeping plan state and delegation in the host harness. Applications own sandbox creation, credentials, recovery, and deletion.
+
+### Added
+
+- Added `SpaceSandbox`, `SpaceBashExecutor`, and `space_harness_tools()` in the bundled `agentlane_space` namespace. The tool bundle runs read, find, grep, patch, write, and Bash in a connected sandbox with the standard tool names and schemas ([`1dabb51`](https://github.com/yasik/agentlane/commit/1dabb51)).
+- Added guest dependency and source checks, command deadlines, and recovery state that blocks further commands after an uncertain failure ([`1dabb51`](https://github.com/yasik/agentlane/commit/1dabb51)).
+- Added a SPACE setup guide, a connection example, and a template example. The guest requires the same AgentLane build as the host; the sandbox and guest permissions control file access ([`1dabb51`](https://github.com/yasik/agentlane/commit/1dabb51)).
+
 ## [0.19.0] - 2026-10-12
 
 AgentLane `0.19.0` adds Model Context Protocol (MCP) tools over Streamable HTTP and stdio, with shared connections and tool catalog caching. Install `agentlane[mcp]` to use MCP servers with the harness.
@@ -383,7 +393,8 @@ AgentLane `0.3.0` is the initial public release. It ships the runtime and distri
 
 - Final pre-release cleanup removed dead code and added repo-level `vulture` configuration for ongoing dead-code checks ([`f009e5d`](https://github.com/yasik/agentlane/commit/f009e5d523a84d3e6747329522582d3196906534))
 
-[Unreleased]: https://github.com/yasik/agentlane/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/yasik/agentlane/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/yasik/agentlane/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/yasik/agentlane/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/yasik/agentlane/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/yasik/agentlane/compare/v0.16.0...v0.17.0
