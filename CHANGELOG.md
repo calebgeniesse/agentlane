@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-17
+
+AgentLane `0.21.0` adds native OpenAI Responses steering and async function tools. Applications can update an active WebSocket run and execute selected tools while model output continues. The adapter preserves native response items and metadata through harness history and snapshots.
+
+### Added
+
+- Added WebSocket steering through run streams with live `SteeringReceipt` status, successor response handling, and committed history updates when steering is applied. Steering requires provider support for the model and account ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+- Added `async_tools` for local and MCP functions over HTTP streaming or WebSocket runs, with existing tool budgets, authorization, hooks, cancellation, and cleanup. Pending async work cannot resume from a saved snapshot ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+- Added native Responses input and output preservation, hosted tool declarations, response metadata, and runnable steering and async-tool examples. Unsupported native calls without a local execution integration raise `ResponseError` with the native response attached ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+- Added shared enums for message roles, tool choices, tool errors, plan states, steering status, and model continuation while retaining existing string inputs ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+
+### Changed
+
+- Pinned `openai[realtime]` to `3.31.0` and the LiteLLM extras to development release `1.107.0.dev2` for SDK 3 compatibility ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+- Native history uses `openai_responses_input`; preserve this field when copying history. LiteLLM rejects this field, so applications must convert native history explicitly before switching providers. WebSocket runs own continuation state and reject conflicting conversation and compaction options ([`2ba3d9b`](https://github.com/yasik/agentlane/commit/2ba3d9b)).
+
+### Fixed
+
+- Preserved nested documentation navigation, grouped tool pages, and corrected portal links and page titles ([`245764b`](https://github.com/yasik/agentlane/commit/245764b)).
+
 ## [0.20.0] - 2026-10-16
 
 AgentLane `0.20.0` adds SPACE sandbox tools. Applications can run Bash and file tools in a sandbox while keeping plan state and delegation in the host harness. Applications own sandbox creation, credentials, recovery, and deletion.
@@ -393,7 +413,8 @@ AgentLane `0.3.0` is the initial public release. It ships the runtime and distri
 
 - Final pre-release cleanup removed dead code and added repo-level `vulture` configuration for ongoing dead-code checks ([`f009e5d`](https://github.com/yasik/agentlane/commit/f009e5d523a84d3e6747329522582d3196906534))
 
-[Unreleased]: https://github.com/yasik/agentlane/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/yasik/agentlane/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/yasik/agentlane/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/yasik/agentlane/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/yasik/agentlane/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/yasik/agentlane/compare/v0.17.0...v0.18.0
