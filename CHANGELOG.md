@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Successful MCP results with structured content no longer repeat it in text
+  blocks; the model gets `structuredContent` and the other content blocks.
+  Read the result data from `structuredContent`, or set
+  `include_structured_content=False` to keep the text blocks.
+
+### Fixed
+
+- JSON text in MCP results now counts once against the processing limit, so a
+  result shorter than `max_text_chars` is no longer omitted.
+- MCP text that starts with `[` or `{` but is not JSON, such as
+  `[00:31] Speaker 1: Hello.`, is no longer omitted. Credential values in
+  `"key": value` pairs of such text are redacted.
+
 ## [0.21.0] - 2026-10-17
 
 AgentLane `0.21.0` adds native OpenAI Responses steering and async function tools. Applications can update an active WebSocket run and execute selected tools while model output continues. The adapter preserves native response items and metadata through harness history and snapshots.

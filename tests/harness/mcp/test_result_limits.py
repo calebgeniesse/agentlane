@@ -13,6 +13,7 @@ from agentlane.harness.mcp import MCPResultPolicy
 from agentlane.harness.mcp import _result as mcp_result
 from agentlane.harness.mcp._redaction import redact_known_secrets
 from agentlane.harness.mcp._result import render_mcp_result
+from agentlane.models import ToolFailure
 
 
 class _CountingBlocks(Sequence[object]):
@@ -71,10 +72,14 @@ def test_sdk_result_and_content_do_not_require_full_model_dump(
 
 
 @pytest.mark.parametrize("count", [1000, 100_000])
-def test_block_limit_does_not_visit_omitted_content(count: int) -> None:
+@pytest.mark.parametrize("structured", [None, {"ok": True}])
+def test_block_limit_does_not_visit_omitted_content(
+    count: int, structured: dict[str, bool] | None
+) -> None:
     content = _CountingBlocks(count)
     rendered = render_mcp_result(
-        {"content": content}, MCPResultPolicy(max_content_blocks=1)
+        {"content": content, "structuredContent": structured},
+        MCPResultPolicy(max_content_blocks=1),
     )
     assert content.reads == 1
     assert json.loads(rendered)["omittedBlocks"] == count - 1
@@ -211,15 +216,35 @@ def test_input_character_budget_is_shared_across_blocks() -> None:
     assert "test-only-secret" not in rendered
 
 
-@pytest.mark.parametrize("text", ['{"password":"credential-canary"', "[notes]"])
-def test_unparseable_json_text_is_omitted(text: str) -> None:
+@pytest.mark.parametrize(
+    "text", ['{"password":"credential-canary"', '{"password":"credential-canary']
+)
+def test_unparseable_json_text_renders_with_credentials_redacted(text: str) -> None:
     rendered = render_mcp_result(
         types.CallToolResult(content=[types.TextContent(text=text)]), MCPResultPolicy()
     )
     payload = json.loads(rendered)
-    assert "omitted" in payload["content"][0]["text"]
+    assert payload["content"][0]["text"] == '{"password":"[redacted]"'
     assert "credential-canary" not in rendered
-    assert payload["truncated"] is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[00:31] Speaker 1: Hi there, doctor.",
+        "[Speaker 1] Hello.",
+        "[notes]",
+        "{draft} reply",
+        "[3.8-11.8] reference range",
+    ],
+)
+def test_bracketed_prose_renders_unchanged(text: str) -> None:
+    rendered = render_mcp_result(
+        types.CallToolResult(content=[types.TextContent(text=text)]), MCPResultPolicy()
+    )
+    payload = json.loads(rendered)
+    assert payload["content"][0]["text"] == text
+    assert "truncated" not in payload
 
 
 def test_ordinary_prose_remains_unchanged() -> None:
@@ -287,3 +312,111 @@ async def test_large_result_does_not_stall_the_event_loop() -> None:
     # This loose ceiling also detects an accidental event-loop stall in CI.
     assert delay < 0.5
     assert len(rendered) <= 128
+
+
+def test_json_text_over_half_the_budget_renders_complete() -> None:
+    transcript = "Speaker 1: a long meeting. " * 1500
+    text = json.dumps({"id": "meeting-1", "text": transcript})
+    rendered = render_mcp_result(
+        types.CallToolResult(content=[types.TextContent(text=text)]), MCPResultPolicy()
+    )
+    payload = json.loads(rendered)
+    assert json.loads(payload["content"][0]["text"])["text"] == transcript
+
+
+def test_structured_result_skips_the_text_blocks_that_repeat_it() -> None:
+    structured = {"id": "meeting-1", "text": "Speaker 1: a long meeting. " * 1500}
+    rendered = render_mcp_result(
+        types.CallToolResult(
+            content=[types.TextContent(text=json.dumps(structured))],
+            structured_content=structured,
+        ),
+        MCPResultPolicy(),
+    )
+    payload = json.loads(rendered)
+    assert payload == {"content": [], "isError": False, "structuredContent": structured}
+
+
+def test_structured_result_keeps_non_text_blocks() -> None:
+    rendered = render_mcp_result(
+        types.CallToolResult(
+            content=[
+                types.TextContent(text='{"chart": "weekly"}'),
+                types.ImageContent(data="chart-bytes", mime_type="image/png"),
+            ],
+            structured_content={"chart": "weekly"},
+        ),
+        MCPResultPolicy(),
+    )
+    payload = json.loads(rendered)
+    assert [block["type"] for block in payload["content"]] == ["image"]
+    assert payload["structuredContent"] == {"chart": "weekly"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [[types.TextContent(text="Meeting not found.")], []],
+    ids=["text-details", "structured-details"],
+)
+def test_failed_result_keeps_text_and_structured_details(
+    content: list[types.TextContent],
+) -> None:
+    rendered = render_mcp_result(
+        types.CallToolResult(
+            content=list(content),
+            structured_content={"code": "not_found"},
+            is_error=True,
+        ),
+        MCPResultPolicy(),
+    )
+    assert isinstance(rendered, ToolFailure)
+    payload = json.loads(rendered.text)
+    assert [block["text"] for block in payload["content"]] == [
+        block.text for block in content
+    ]
+    assert payload["structuredContent"] == {"code": "not_found"}
+    assert payload["isError"] is True
+
+
+def test_empty_structured_result_keeps_the_text_blocks() -> None:
+    rendered = render_mcp_result(
+        types.CallToolResult(
+            content=[types.TextContent(text="No meetings today.")],
+            structured_content={},
+        ),
+        MCPResultPolicy(),
+    )
+    payload = json.loads(rendered)
+    assert payload["content"][0]["text"] == "No meetings today."
+    assert "structuredContent" not in payload
+
+
+def test_json_text_keys_are_charged_once_against_the_input_budget() -> None:
+    data = {f"k{index:05d}" + "x" * 12: 0 for index in range(1700)}
+    rendered = render_mcp_result(
+        types.CallToolResult(content=[types.TextContent(text=json.dumps(data))]),
+        MCPResultPolicy(),
+    )
+    payload = json.loads(rendered)
+    assert json.loads(payload["content"][0]["text"]) == data
+
+
+def test_nested_json_text_parses_within_the_input_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = "[1." + "0" * 30_000 + "]"
+    while len(json.dumps([text])) <= 60_000:
+        text = json.dumps([text])
+
+    parsed: list[int] = []
+    decode = json.loads
+
+    def counting_decode(value: str, **kwargs: Any) -> Any:
+        parsed.append(len(value))
+        return decode(value, **kwargs)
+
+    monkeypatch.setattr(json, "loads", counting_decode)
+    render_mcp_result(
+        types.CallToolResult(content=[types.TextContent(text=text)]), MCPResultPolicy()
+    )
+    assert sum(parsed) <= 64 * 1024

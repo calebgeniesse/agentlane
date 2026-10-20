@@ -11,12 +11,14 @@ from pydantic import BaseModel
 from agentlane.models import ToolError, ToolFailure
 
 from ._errors import MCP_SERVER_TOOL_ERROR_KIND
-from ._redaction import is_secret_key, redact_known_secrets
+from ._redaction import is_secret_key, redact_known_secrets, redact_secret_pairs
 from ._types import MCPResultPolicy
 
 _OMISSION = "[omitted: exceeds processing limit]"
 _MAX_NODES = 4096
 _MAX_DEPTH = 32
+_NOT_JSON = object()
+"""Returned by `_parse_json` when text is not valid JSON."""
 
 
 class _SDKResult(Protocol):
@@ -41,8 +43,12 @@ def render_mcp_result(
     """Render a bounded preview without processing omitted server content."""
     source = _read_result(result)
     renderer = _Renderer(policy.max_text_chars, secrets)
+
+    # An empty structured result carries no data, so it does not replace text.
     structured = (
-        source.structured_content if policy.include_structured_content else None
+        source.structured_content
+        if policy.include_structured_content and source.structured_content
+        else None
     )
     reserved: dict[str, object] = {
         "content": [],
@@ -55,8 +61,15 @@ def render_mcp_result(
 
     available = policy.max_text_chars - len(_json(reserved))
     content_budget = 2 + (int(available * 0.6) if structured is not None else available)
+
+    # Servers repeat structured content in text blocks for clients that cannot
+    # read it, so skip that copy. Keep the text blocks of a failure, because
+    # the server puts the failure details there.
     content, kept = renderer.content(
-        source.content, max(2, content_budget), policy.max_content_blocks
+        source.content,
+        max(2, content_budget),
+        policy.max_content_blocks,
+        skip_text=structured is not None and not source.is_error,
     )
     fields = [f'"content":{content}', f'"isError":{_json(source.is_error)}']
     if structured is not None:
@@ -99,6 +112,13 @@ def _read_result(value: object) -> _Result:
     return _Result(source.content, source.structured_content, source.is_error)
 
 
+def _parse_json(text: str) -> object:
+    try:
+        return json.loads(text)
+    except (ValueError, RecursionError):
+        return _NOT_JSON
+
+
 def _sequence(value: object) -> Sequence[object]:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return cast(Sequence[object], value)
@@ -129,6 +149,13 @@ def _field(value: Mapping[str, object] | BaseModel, name: str) -> object:
         return getattr(value, name)
 
     return value[name]
+
+
+def _block_type(block: object) -> object | None:
+    if isinstance(block, (Mapping, BaseModel)):
+        return _field(cast(Mapping[str, object] | BaseModel, block), "type")
+
+    return None
 
 
 class _Renderer:
@@ -186,6 +213,7 @@ class _Renderer:
         *,
         resource: bool = False,
         block: bool = False,
+        charged: bool = False,
     ) -> str | None:
         if available < 2:
             self.truncated = True
@@ -205,26 +233,34 @@ class _Renderer:
                 depth,
                 resource=resource,
                 block=block,
+                charged=charged,
             )
 
         if isinstance(value, str):
-            if not self._take_text(value):
+            # Charge JSON text before each parse. A string parsed from charged
+            # JSON text is part of that text, so do not charge it again.
+            is_json = value.lstrip().startswith(("{", "["))
+            if (is_json or not charged) and not self._take_text(value):
                 return self._omission(available)
 
-            if value.lstrip().startswith(("{", "[")):
-                try:
-                    parsed: object = json.loads(value)
-                except (ValueError, RecursionError):
-                    return self._omission(available)
-
-                safe = self.value(parsed, max(2, available - 2), depth + 1) or "null"
+            # Render JSON text as structure, so credential keys are redacted.
+            # Text that does not parse is text, so redact it as text.
+            parsed = _parse_json(value) if is_json else _NOT_JSON
+            if parsed is not _NOT_JSON:
+                safe = (
+                    self.value(parsed, max(2, available - 2), depth + 1, charged=True)
+                    or "null"
+                )
             else:
-                safe = cast(str, redact_known_secrets(value, self.secrets))
+                text = cast(str, redact_known_secrets(value, self.secrets))
+                safe = redact_secret_pairs(text)
 
             return self._text(safe, available)
 
         if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
-            return self._array(cast(Sequence[object], value), available, depth)
+            return self._array(
+                cast(Sequence[object], value), available, depth, charged=charged
+            )
 
         if value is None or isinstance(value, (bool, int, float)):
             if isinstance(value, int) and value.bit_length() > available * 3:
@@ -247,6 +283,7 @@ class _Renderer:
         *,
         resource: bool,
         block: bool,
+        charged: bool,
     ) -> str | None:
         kind = _field(value, "type") if block else None
         fields = _fields(value)
@@ -262,7 +299,7 @@ class _Renderer:
                 break
 
             self.nodes -= 1
-            if not self._take_text(alias):
+            if not charged and not self._take_text(alias):
                 continue
 
             if len(alias) > available - used - 5:
@@ -301,6 +338,7 @@ class _Renderer:
                     remaining,
                     depth + 1,
                     resource=block and kind == "resource" and alias == "resource",
+                    charged=charged,
                 )
 
             if encoded is None:
@@ -329,7 +367,9 @@ class _Renderer:
             if alias != "type" and not (text and alias == "text"):
                 yield name, alias
 
-    def _array(self, value: Sequence[object], available: int, depth: int) -> str:
+    def _array(
+        self, value: Sequence[object], available: int, depth: int, *, charged: bool
+    ) -> str:
         parts: list[str] = []
         used = 2
         for index in range(len(value)):
@@ -338,7 +378,7 @@ class _Renderer:
                 self.truncated = True
                 break
 
-            encoded = self.value(value[index], remaining, depth + 1)
+            encoded = self.value(value[index], remaining, depth + 1, charged=charged)
             if encoded is None:
                 break
 
@@ -348,21 +388,35 @@ class _Renderer:
         return "[" + ",".join(parts) + "]"
 
     def content(
-        self, value: Sequence[object], available: int, max_blocks: int
+        self,
+        value: Sequence[object],
+        available: int,
+        max_blocks: int,
+        *,
+        skip_text: bool,
     ) -> tuple[str, int]:
         parts: list[str] = []
         used = 2
+        kept = 0
         for index in range(min(len(value), max_blocks)):
+            block = value[index]
+
+            # A skipped text block is a repeated copy, not an omitted block.
+            if skip_text and _block_type(block) == "text":
+                kept += 1
+                continue
+
             remaining = available - used - bool(parts)
             if self.nodes <= 0 or remaining < 2:
                 self.truncated = True
                 break
 
-            encoded = self.value(value[index], remaining, block=True)
+            encoded = self.value(block, remaining, block=True)
             if encoded is None:
                 break
 
             used += len(encoded) + bool(parts)
             parts.append(encoded)
+            kept += 1
 
-        return "[" + ",".join(parts) + "]", len(parts)
+        return "[" + ",".join(parts) + "]", kept
