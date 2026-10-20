@@ -7,20 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-20
+
+AgentLane `0.22.0` removes duplicate text from successful structured MCP results and fixes processing limits for JSON text. Consumers that read text blocks from these results must use `structuredContent` or set `include_structured_content=False`.
+
 ### Changed
 
-- Successful MCP results with structured content no longer repeat it in text
-  blocks; the model gets `structuredContent` and the other content blocks.
-  Read the result data from `structuredContent`, or set
-  `include_structured_content=False` to keep the text blocks.
+- Successful MCP results with non-empty structured content now omit text blocks and keep `structuredContent` and other content blocks. Failed results and results with empty structured content keep their text blocks ([`bb3fe4d`](https://github.com/yasik/agentlane/commit/bb3fe4d)).
 
 ### Fixed
 
-- JSON text in MCP results now counts once against the processing limit, so a
-  result shorter than `max_text_chars` is no longer omitted.
-- MCP text that starts with `[` or `{` but is not JSON, such as
-  `[00:31] Speaker 1: Hello.`, is no longer omitted. Credential values in
-  `"key": value` pairs of such text are redacted.
+- JSON text in MCP results now counts once against the processing limit, so results within the limit are no longer omitted because of duplicate counting ([`bb3fe4d`](https://github.com/yasik/agentlane/commit/bb3fe4d)).
+- MCP text that starts with `[` or `{` but is not JSON is no longer omitted. Credential values in quoted key-value pairs in this text are redacted ([`bb3fe4d`](https://github.com/yasik/agentlane/commit/bb3fe4d)).
 
 ## [0.21.0] - 2026-10-17
 
@@ -428,7 +426,8 @@ AgentLane `0.3.0` is the initial public release. It ships the runtime and distri
 
 - Final pre-release cleanup removed dead code and added repo-level `vulture` configuration for ongoing dead-code checks ([`f009e5d`](https://github.com/yasik/agentlane/commit/f009e5d523a84d3e6747329522582d3196906534))
 
-[Unreleased]: https://github.com/yasik/agentlane/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/yasik/agentlane/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/yasik/agentlane/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/yasik/agentlane/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/yasik/agentlane/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/yasik/agentlane/compare/v0.18.0...v0.19.0
